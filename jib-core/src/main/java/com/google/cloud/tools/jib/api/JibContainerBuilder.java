@@ -24,6 +24,7 @@ import com.google.cloud.tools.jib.configuration.ImageConfiguration;
 import com.google.cloud.tools.jib.docker.DockerClient;
 import com.google.cloud.tools.jib.event.EventHandlers;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.net.UnknownHostException;
 import java.nio.file.Path;
@@ -196,6 +197,15 @@ public class JibContainerBuilder {
    */
   public JibContainerBuilder setLayers(LayerConfiguration... layerConfigurations) {
     return setLayers(Arrays.asList(layerConfigurations));
+  }
+
+  /**
+   * Gets the layers configured in this builder.
+   *
+   * @return an immutable copy of layerConfigurations for this builder
+   */
+  public List<LayerConfiguration> getLayerConfiguration() {
+    return ImmutableList.copyOf(layerConfigurations);
   }
 
   /**

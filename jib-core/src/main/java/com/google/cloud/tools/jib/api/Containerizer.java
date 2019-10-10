@@ -117,6 +117,14 @@ public class Containerizer {
         DESCRIPTION_FOR_TARBALL, imageConfiguration, stepsRunnerFactory, false);
   }
 
+  public static Containerizer noOp() {
+    return new Containerizer(
+        "do nothing",
+        ImageConfiguration.builder(ImageReference.scratch()).build(),
+        ignored -> null,
+        false);
+  }
+
   private final String description;
   private final ImageConfiguration imageConfiguration;
   private final Function<BuildConfiguration, StepsRunner> stepsRunnerFactory;

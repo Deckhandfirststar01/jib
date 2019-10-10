@@ -23,8 +23,11 @@ import com.google.cloud.tools.jib.api.DockerDaemonImage;
 import com.google.cloud.tools.jib.api.ImageReference;
 import com.google.cloud.tools.jib.api.InvalidImageReferenceException;
 import com.google.cloud.tools.jib.api.JavaContainerBuilder;
+import com.google.cloud.tools.jib.api.JavaContainerBuilder.LayerType;
 import com.google.cloud.tools.jib.api.Jib;
 import com.google.cloud.tools.jib.api.JibContainerBuilder;
+import com.google.cloud.tools.jib.api.LayerConfiguration;
+import com.google.cloud.tools.jib.api.LayerEntry;
 import com.google.cloud.tools.jib.api.LogEvent;
 import com.google.cloud.tools.jib.api.Ports;
 import com.google.cloud.tools.jib.api.RegistryImage;
@@ -34,6 +37,7 @@ import com.google.cloud.tools.jib.global.JibSystemProperties;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Verify;
+import com.google.common.collect.ImmutableList;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -170,6 +174,44 @@ public class PluginConfigurationProcessor {
             rawConfiguration.getToTags())
         .writeImageDigest(rawConfiguration.getDigestOutputPath())
         .writeImageId(rawConfiguration.getImageIdOutputPath());
+  }
+
+  // Known "generated" dependencies -- these require that maven run "compile" or "package" before
+  // they are available for sync'ing, all other layers are direct and can be sync'd as they change
+  private static final ImmutableList<String> GENERATED_LAYERS =
+      ImmutableList.of(
+          LayerType.PROJECT_DEPENDENCIES.getName(),
+          LayerType.RESOURCES.getName(),
+          LayerType.CLASSES.getName());
+
+  // Known "constant" layers -- changes to these layers require a change to the build definition,
+  // which we consider non-syncable. These should not be included in the sync-map.
+  private static final ImmutableList<String> CONST_LAYERS =
+      ImmutableList.of(LayerType.DEPENDENCIES.getName());
+
+  public static String getSkaffoldSyncMap(
+      RawConfiguration rawConfiguration, ProjectProperties projectProperties)
+      throws IOException, InvalidCreationTimeException, InvalidImageReferenceException,
+          IncompatibleBaseImageJavaVersionException, InvalidContainerVolumeException,
+          MainClassInferenceException, InvalidAppRootException, InvalidWorkingDirectoryException,
+          InvalidFilesModificationTimeException, InvalidContainerizingModeException {
+    JibContainerBuilder jibContainerBuilder =
+        processCommonConfiguration(
+            rawConfiguration, ignored -> Optional.empty(), projectProperties, Containerizer.noOp());
+    SkaffoldSyncMapTemplate syncMap = new SkaffoldSyncMapTemplate();
+    // since jib has already expanded out directories after processing everything, we just
+    // ignore directories and provide only files to watch
+    for (LayerConfiguration layer : jibContainerBuilder.getLayerConfiguration()) {
+      if (CONST_LAYERS.contains(layer.getName())) {
+        continue;
+      }
+      if (GENERATED_LAYERS.contains(layer.getName())) {
+        layer.getLayerEntries().stream().filter(layerEntry -> Files.isRegularFile(layerEntry.getSourceFile())).forEach(syncMap::addGenerated);
+      } else { // this is a direct layer
+        layer.getLayerEntries().stream().filter(layerEntry -> Files.isRegularFile(layerEntry.getSourceFile())).forEach(syncMap::addDirect);
+      }
+    }
+    return syncMap.getJsonString();
   }
 
   @VisibleForTesting
